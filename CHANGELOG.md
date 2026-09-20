@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking:** every bind-mount source is now a single complete-path
+  variable (no variables embedded inside a path), so Coolify and other
+  Compose consumers can parse the file cleanly. `HARBOR_CONFIG_DIR` and
+  `HARBOR_SECRET_DIR` were removed in favor of per-file variables
+  (`HARBOR_PORTAL_CONFIG`, `HARBOR_ROUTER_CONFIG`, `HARBOR_REGISTRY_CONFIG`,
+  `HARBOR_REGISTRYCTL_CONFIG`, `HARBOR_JOBSERVICE_TEMPLATE`,
+  `HARBOR_CORE_PRIVATE_KEY`, `HARBOR_CORE_SECRET_KEY`,
+  `HARBOR_REGISTRY_PASSWD`, `HARBOR_JOBSERVICE_CONFIG`), and the data
+  directories are now complete paths (`HARBOR_DB_DATA_DIR`,
+  `HARBOR_REDIS_DATA_DIR`, `HARBOR_REGISTRY_DATA_DIR`, `HARBOR_JOB_LOGS_DIR`,
+  `HARBOR_CA_DOWNLOAD_DIR`).
+- `_REDIS_URL_CORE` is now supplied through the generated `REDIS_URL`
+  variable instead of being composed from `REDIS_PASSWORD` in the compose
+  file.
+
 ## [1.0.0] - 2026-09-20
 
 ### Added

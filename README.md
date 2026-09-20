@@ -67,9 +67,10 @@ variables, and written to `git`-ignored paths.
 - **Hardened Redis.** Password protected, memory capped and LRU-evicting.
 - **Fully configurable limits.** CPU, memory, reservations and PID limits per
   service, all via environment variables.
-- **Configurable storage paths.** `HARBOR_DATA_DIR` / `HARBOR_CONFIG_DIR`
-  roots with optional per-service overrides — keep registry blobs and the
-  database on separate disks if you want.
+- **Parser-friendly storage paths.** Every bind-mount source is one complete
+  path variable (no variables embedded inside a path), so Coolify and other
+  Compose consumers read them cleanly. Put the database, registry blobs or
+  any config file wherever you want.
 - **Health checks and ordering.** Database and Redis must be healthy before
   core starts; the registry before core proxies to it.
 - **`no-new-privileges`** on every service, json-file log rotation, graceful
@@ -203,7 +204,8 @@ HTTPS URL — Harbor derives redirects and the Docker token realm from it.
    [`.env.production.example`](.env.production.example)) in Coolify's
    **Environment Variables**. Minimum changes:
    - `EXTERNAL_URL` / `PORTAL_URL` = `https://registry.example.com`
-   - `HARBOR_DATA_DIR` = `/data/harbor` (outside the repo)
+   - `HARBOR_DATA_DIR` = `/data/harbor` (outside the repo; the other
+     `HARBOR_*_DIR` paths default to subdirectories of it)
    - `COMPOSE_PROJECT_NAME` = `harbor`
 4. Set the domain on the **`harbor-router`** service:
    `https://registry.example.com:8080` (the suffix is the internal port).
@@ -229,21 +231,23 @@ docker compose --env-file .env.production up -d
 
 ### Getting config files to the host
 
-All config files are bind-mounted from `${HARBOR_CONFIG_DIR}`:
+Each config file has its own complete-path variable:
 
-| File | Mounted into |
-|---|---|
-| `config/nginx/router.conf` | `harbor-router` |
-| `config/portal/nginx.conf` | `harbor-portal` |
-| `config/registry/config.yml` | `registry`, `registryctl` |
-| `config/registryctl/config.yml` | `registryctl` |
-| `config/jobservice/config.yml.tmpl` | read by `gen-secrets.sh` |
+| File | Variable | Mounted into |
+|---|---|---|
+| `config/nginx/router.conf` | `HARBOR_ROUTER_CONFIG` | `harbor-router` |
+| `config/portal/nginx.conf` | `HARBOR_PORTAL_CONFIG` | `harbor-portal` |
+| `config/registry/config.yml` | `HARBOR_REGISTRY_CONFIG` | `registry`, `registryctl` |
+| `config/registryctl/config.yml` | `HARBOR_REGISTRYCTL_CONFIG` | `registryctl` |
+| `config/jobservice/config.yml.tmpl` | `HARBOR_JOBSERVICE_TEMPLATE` | read by `gen-secrets.sh` |
 
 - **Git deploy:** Coolify clones the repo to the host; keep *Preserve
-  Repository During Deployment* enabled and leave `HARBOR_CONFIG_DIR=./config`.
-- **Manual deploy:** `rsync -avz config/ root@host:/data/harbor/config/` and set
-  `HARBOR_CONFIG_DIR=/data/harbor/config`. This survives redeploys that wipe
-  the repository directory.
+  Repository During Deployment* enabled and leave the variables at
+  `./config/...`.
+- **Manual deploy:** `rsync -avz config/ root@host:/data/harbor/config/` and
+  point the `*_CONFIG` variables at the copied files (for example
+  `HARBOR_ROUTER_CONFIG=/data/harbor/config/nginx/router.conf`). This survives
+  redeploys that wipe the repository directory.
 
 ## Use cases
 
@@ -304,16 +308,27 @@ Highlights:
 
 ### Storage
 
-| Variable | Description | Default |
+Every bind-mount source is a **complete path variable** — no variables are
+embedded inside a path, so Coolify and other Compose consumers parse them
+cleanly. Point any of them at a different disk or directory.
+
+| Variable | Purpose | Local default |
 |---|---|---|
-| `HARBOR_DATA_DIR` | Root for all runtime state (**required**) | `./data` |
-| `HARBOR_CONFIG_DIR` | Root for the committed config files (**required**) | `./config` |
-| `HARBOR_DB_DATA_DIR` | PostgreSQL data | `${HARBOR_DATA_DIR}/database` |
-| `HARBOR_REDIS_DATA_DIR` | Redis data | `${HARBOR_DATA_DIR}/redis` |
-| `HARBOR_REGISTRY_DATA_DIR` | Registry blobs | `${HARBOR_DATA_DIR}/registry` |
-| `HARBOR_JOB_LOGS_DIR` | Jobservice logs | `${HARBOR_DATA_DIR}/job_logs` |
-| `HARBOR_CA_DOWNLOAD_DIR` | Core CA downloads | `${HARBOR_DATA_DIR}/ca_download` |
-| `HARBOR_SECRET_DIR` | Keys, htpasswd, rendered configs | `${HARBOR_DATA_DIR}/secret` |
+| `HARBOR_DATA_DIR` | Core data root | `./data` |
+| `HARBOR_DB_DATA_DIR` | PostgreSQL data | `./data/database` |
+| `HARBOR_REDIS_DATA_DIR` | Redis data | `./data/redis` |
+| `HARBOR_REGISTRY_DATA_DIR` | Registry blobs | `./data/registry` |
+| `HARBOR_JOB_LOGS_DIR` | Jobservice logs | `./data/job_logs` |
+| `HARBOR_CA_DOWNLOAD_DIR` | Core CA downloads | `./data/ca_download` |
+| `HARBOR_CORE_PRIVATE_KEY` | Core token-signing key | `./data/secret/core/private_key.pem` |
+| `HARBOR_CORE_SECRET_KEY` | Core encryption key | `./data/secret/keys/secretkey` |
+| `HARBOR_REGISTRY_PASSWD` | Registry htpasswd file | `./data/secret/registry/passwd` |
+| `HARBOR_JOBSERVICE_CONFIG` | Rendered jobservice config | `./data/secret/jobservice/config.yml` |
+| `HARBOR_PORTAL_CONFIG` | Portal nginx config | `./config/portal/nginx.conf` |
+| `HARBOR_ROUTER_CONFIG` | Router nginx config | `./config/nginx/router.conf` |
+| `HARBOR_REGISTRY_CONFIG` | Registry config | `./config/registry/config.yml` |
+| `HARBOR_REGISTRYCTL_CONFIG` | Registryctl config | `./config/registryctl/config.yml` |
+| `HARBOR_JOBSERVICE_TEMPLATE` | Jobservice template (script only) | `./config/jobservice/config.yml.tmpl` |
 
 ### Credentials
 
@@ -322,6 +337,7 @@ Highlights:
 | `POSTGRES_DB` / `POSTGRES_USER` | Database name and user |
 | `POSTGRES_PASSWORD` | Database password (generated) |
 | `REDIS_PASSWORD` | Redis password (generated) |
+| `REDIS_URL` | Full authenticated Redis URL used by core and jobservice (generated) |
 | `HARBOR_ADMIN_PASSWORD` | Initial `admin` password (generated, policy-compliant) |
 | `CORE_SECRET` / `JOBSERVICE_SECRET` | Inter-service secrets (generated) |
 | `CSRF_KEY` | Must be exactly 32 characters (generated) |
@@ -476,8 +492,9 @@ Docker only treats `localhost` as insecure by default. Use TLS, or add your
 registry to `insecure-registries` for testing.
 
 **Coolify: mounts break after redeploy**
-Enable *Preserve Repository During Deployment*, or move configs to an absolute
-path with `HARBOR_CONFIG_DIR=/data/harbor/config`.
+Enable *Preserve Repository During Deployment*, or copy the configs to an
+absolute path and point the `*_CONFIG` variables there (for example
+`HARBOR_ROUTER_CONFIG=/data/harbor/config/nginx/router.conf`).
 
 **Garbage collection does nothing**
 Confirm `registryctl` is healthy (`make ps`) and that core was started with

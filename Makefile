@@ -37,7 +37,7 @@ dev-up: ## Enable loopback ingress (127.0.0.1:8080) and start the stack
 	@test -f docker-compose.override.yml || cp docker-compose.override.yml.example docker-compose.override.yml
 	$(COMPOSE) up -d
 
-backup: ## Archive the runtime data directory into ./backups
+backup: ## Archive HARBOR_DATA_DIR into ./backups (paths outside it need separate backups)
 	@mkdir -p backups
 	@data_dir="$$(grep '^HARBOR_DATA_DIR=' $(ENV_FILE) | cut -d= -f2-)"; \
 	case "$$data_dir" in /*) ;; *) data_dir="$$PWD/$${data_dir#./}" ;; esac; \
