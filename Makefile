@@ -4,10 +4,10 @@ COMPOSE := docker compose --env-file $(ENV_FILE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env secrets config up down restart ps logs dev-up backup db-backup
+.PHONY: help env secrets config coolify-compose check up down restart ps logs dev-up backup db-backup
 
 help: ## Show available targets
-	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 env: ## Create $(ENV_FILE) from .env.example if it does not exist
 	@if [ ! -f "$(ENV_FILE)" ]; then cp .env.example "$(ENV_FILE)" && echo "created $(ENV_FILE) — now run: make secrets"; else echo "$(ENV_FILE) already exists"; fi
@@ -16,6 +16,13 @@ secrets: ## Generate secrets, keys, htpasswd and runtime directories
 	./scripts/gen-secrets.sh $(ENV_FILE)
 
 config: ## Validate the rendered Compose configuration
+	@$(COMPOSE) config --quiet && echo "compose config OK"
+
+coolify-compose: ## Regenerate docker-compose.coolify.yml from the main compose
+	./scripts/render-coolify-compose.sh
+
+check: ## Verify generated files are current and the compose validates
+	@./scripts/render-coolify-compose.sh --check
 	@$(COMPOSE) config --quiet && echo "compose config OK"
 
 up: ## Start the stack

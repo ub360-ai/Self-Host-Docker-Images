@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `docker-compose.coolify.yml`, a Coolify-ready variant with literal
+  `/data/harbor` bind mounts. Coolify rejects variables inside volume
+  definitions ([coollabsio/coolify#7127](https://github.com/coollabsio/coolify/issues/7127)).
+  It is generated from `docker-compose.yml` by
+  `scripts/render-coolify-compose.sh` — use `make coolify-compose` to
+  regenerate and `make check` to detect drift.
+
 ### Changed
 
 - **Breaking:** every Docker volume is now a single complete mapping

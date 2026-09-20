@@ -75,8 +75,9 @@ variables, and written to `git`-ignored paths.
   core starts; the registry before core proxies to it.
 - **`no-new-privileges`** on every service, json-file log rotation, graceful
   shutdown for PostgreSQL.
-- **Coolify-ready.** Set one domain on `harbor-router` and let Coolify's
-  Traefik terminate TLS.
+- **Coolify-ready.** A generated `docker-compose.coolify.yml` with literal
+  `/data/harbor` mounts works around Coolify's volume-variable restriction; set
+  one domain on `harbor-router` and let Coolify's Traefik terminate TLS.
 - **Local-first developer loop.** A committed override example publishes the
   router on `127.0.0.1:8080` for browser and `docker` CLI testing.
 
@@ -196,42 +197,52 @@ HTTPS URL — Harbor derives redirects and the Docker token realm from it.
 
 ### Coolify
 
+Coolify's compose parser rejects variables inside volume definitions
+([coollabsio/coolify#7127](https://github.com/coollabsio/coolify/issues/7127)),
+so this repository ships a Coolify-ready variant with literal absolute bind
+mounts under `/data/harbor`: [`docker-compose.coolify.yml`](docker-compose.coolify.yml).
+It is generated from `docker-compose.yml` by `scripts/render-coolify-compose.sh`
+(`make coolify-compose`).
+
 1. Push this repository to a private Git remote and create a Coolify resource
-   with the **Docker Compose** build pack (`docker-compose.yml`).
-2. Enable **Configuration → General → Preserve Repository During Deployment**
-   so the `./config` bind mounts stay available.
-3. Add every required variable (see
+   with the **Docker Compose** build pack. Set **Docker Compose Location** to
+   `docker-compose.coolify.yml`.
+2. Add every required variable (see
    [`.env.production.example`](.env.production.example)) in Coolify's
-   **Environment Variables**. Minimum changes:
+   **Environment Variables**. The `HARBOR_*_VOLUME` variables are not
+   referenced by the Coolify compose, so Coolify will not ask for them. Set at
+   least:
    - `EXTERNAL_URL` / `PORTAL_URL` = `https://registry.example.com`
-   - `HARBOR_DATA_VOLUME` = `/data/harbor:/data` (and the other
-     `HARBOR_*_VOLUME` host paths under `/data/harbor`)
    - `COMPOSE_PROJECT_NAME` = `harbor`
-4. Set the domain on the **`harbor-router`** service:
+3. Set the domain on the **`harbor-router`** service:
    `https://registry.example.com:8080` (the suffix is the internal port).
-5. On the VPS, generate secrets once before the first successful deploy:
+4. On the VPS, prepare `/data/harbor` once before the first deploy:
 
    ```bash
-   mkdir -p /opt/harbor && cd /opt/harbor
-   git clone <your-repo> .
-   cp .env.production.example .env.production   # fill in the values
+   sudo mkdir -p /data/harbor
+   rsync -avz config/ root@<host>:/data/harbor/config/
+   cp .env.production.example .env.production   # paths already use /data/harbor
    ./scripts/gen-secrets.sh .env.production
    ```
 
-   Paste the generated secret values into Coolify, then deploy.
+   Then paste the generated secret values into Coolify and deploy. Because
+   every mount is absolute, redeploys cannot wipe data or configs.
 
 ### Generic host (nginx/Caddy + Compose)
 
 ```bash
+sudo mkdir -p /data/harbor
+rsync -avz config/ root@<host>:/data/harbor/config/   # or run the rest on the host
 cp .env.production.example .env.production
-$EDITOR .env.production          # URLs, data dir, limits
+$EDITOR .env.production          # URLs, limits
 ./scripts/gen-secrets.sh .env.production
 docker compose --env-file .env.production up -d
 ```
 
 ### Getting config files to the host
 
-Each config file has its own volume mapping variable:
+Each config file has its own volume mapping variable in the main compose
+(the Coolify variant uses literal `/data/harbor/config/...` paths):
 
 | File | Variable | Mounted into |
 |---|---|---|
@@ -241,13 +252,13 @@ Each config file has its own volume mapping variable:
 | `config/registryctl/config.yml` | `HARBOR_REGISTRYCTL_CONFIG_VOLUME` | `registryctl` |
 | `config/jobservice/config.yml.tmpl` | `HARBOR_JOBSERVICE_TEMPLATE` | read by `gen-secrets.sh` |
 
-- **Git deploy:** Coolify clones the repo to the host; keep *Preserve
-  Repository During Deployment* enabled and leave the variables at
-  `./config/...`.
-- **Manual deploy:** `rsync -avz config/ root@host:/data/harbor/config/` and
-  point the config volume host sources at the copied files (for example
-  `HARBOR_ROUTER_CONFIG_VOLUME=/data/harbor/config/nginx/router.conf:/etc/nginx/conf.d/default.conf:ro`).
-  This survives redeploys that wipe the repository directory.
+- **Absolute layout (Coolify / production example):** copy the files once with
+  `rsync -avz config/ root@host:/data/harbor/config/` and keep the variables at
+  `/data/harbor/config/...`. This survives redeploys that wipe the repository
+  directory.
+- **Repo-relative layout:** set the config volume variables to `./config/...`
+  and keep the repository checkout on the host (Coolify: enable *Preserve
+  Repository During Deployment*).
 
 ## Use cases
 
@@ -268,7 +279,8 @@ Each config file has its own volume mapping variable:
 
 ```
 .
-├── docker-compose.yml               # production stack (Coolify-safe, no ports)
+├── docker-compose.yml               # generic stack, env-driven volumes
+├── docker-compose.coolify.yml       # Coolify variant (literal /data/harbor mounts, generated)
 ├── docker-compose.override.yml.example  # local loopback ingress (gitignored when copied)
 ├── config/
 │   ├── nginx/router.conf            # internal path routing
@@ -276,7 +288,9 @@ Each config file has its own volume mapping variable:
 │   ├── registry/config.yml          # distribution registry
 │   ├── registryctl/config.yml       # garbage collection controller
 │   └── jobservice/config.yml.tmpl   # rendered with the Redis URL by the script
-├── scripts/gen-secrets.sh           # secret + key bootstrap
+├── scripts/
+│   ├── gen-secrets.sh               # secret + key bootstrap
+│   └── render-coolify-compose.sh    # generates docker-compose.coolify.yml
 ├── .env.example                     # runnable local template
 ├── .env.production.example          # production template
 ├── Makefile                         # common operations
@@ -313,6 +327,9 @@ Every Docker volume is one **complete mapping variable** in the env file —
 references exactly one variable per volume. **Only edit the host source**:
 the container targets and `:ro` modes are required by the images, and
 `gen-secrets.sh` warns if they change.
+
+The Coolify variant (`docker-compose.coolify.yml`) hardcodes these mappings
+under `/data/harbor` because Coolify rejects variables in volume definitions.
 
 | Variable | Mapping (local) |
 |---|---|
