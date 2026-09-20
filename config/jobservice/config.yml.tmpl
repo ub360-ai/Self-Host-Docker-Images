@@ -1,0 +1,43 @@
+# Jobservice config template — rendered to ./data/secret/jobservice/config.yml
+# by scripts/gen-secrets.sh (the __REDIS_URL__ token is replaced with the
+# authenticated Redis URL). Do not mount this file directly.
+---
+# Protocol used to serve
+protocol: "http"
+
+# Server listening port
+port: 8080
+
+# Worker pool
+worker_pool:
+  workers: 10
+  backend: "redis"
+  redis_pool:
+    redis_url: "__REDIS_URL__"
+    namespace: "harbor_job_service_namespace"
+    idle_timeout_second: 3600
+
+# Loggers for the running job
+job_loggers:
+  - name: "STD_OUTPUT"
+    level: "info"
+  - name: "FILE"
+    level: "info"
+    settings:
+      base_dir: "/var/log/jobs"
+    sweeper:
+      duration: 1
+      settings:
+        work_dir: "/var/log/jobs"
+
+# Loggers for the job service
+loggers:
+  - name: "STD_OUTPUT"
+    level: "info"
+
+reaper:
+  max_update_hours: 24
+  max_dangling_hours: 168
+
+# The max size of job log returned by API, default is 10M
+max_retrieve_size_mb: 10

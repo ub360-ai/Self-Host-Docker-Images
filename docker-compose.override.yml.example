@@ -1,0 +1,18 @@
+# ════════════════════════════════════════════════════════════════════
+# LOCAL ONLY — never deployed.
+#
+# docker-compose.yml is the production/Coolify compose. In production,
+# Coolify's Traefik terminates TLS and routes the public domain to
+# harbor-router:8080. Locally there is no proxy, so this override just
+# publishes that same router on loopback:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#   docker compose --env-file .env up -d
+#   http://localhost:8080  (loopback only, not reachable from the LAN)
+#
+# Remove or rename this file to run the stack exactly as Coolify will.
+# ════════════════════════════════════════════════════════════════════
+
+services:
+  harbor-router:
+    ports:
+      - "127.0.0.1:8080:8080"

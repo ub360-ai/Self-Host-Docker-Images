@@ -1,0 +1,6 @@
+# Registry controller config for goharbor/harbor-registryctl.
+# Enables Harbor's garbage collection and config reload for the registry.
+protocol: "http"
+port: 8080
+log_level: info
+registry_config: "/etc/registry/config.yml"

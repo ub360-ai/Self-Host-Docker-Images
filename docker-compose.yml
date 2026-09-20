@@ -1,0 +1,378 @@
+# ════════════════════════════════════════════════════════════════════
+# Harbor — private container registry (hardened stack)
+#
+# PRODUCTION / COOLIFY COMPOSE. Keep this file deployment-only: no local
+# ports, services or tooling. Every local adjustment belongs in
+# docker-compose.override.yml (copy the committed .example).
+#
+# No secrets live in this file. Every secret, URL and resource limit is
+# injected from env vars (Coolify UI in production, .env files locally):
+#   Local/dev  : docker compose --env-file .env up -d
+#   Production : docker compose --env-file .env.production up -d
+#
+# Bootstrap secrets + key material: scripts/gen-secrets.sh <env-file>
+# Networking: one Compose-managed bridge network (name from
+# HARBOR_NETWORK_NAME) carries every service. harbor-router is the single
+# ingress point: Coolify's Traefik terminates TLS and routes the domain to
+# harbor-router:8080, which fans out to portal/core. The reverse proxy must
+# join that network; note `docker compose down` removes it while the proxy
+# is detached.
+# ════════════════════════════════════════════════════════════════════
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "${LOG_MAX_SIZE:?LOG_MAX_SIZE is required}"
+    max-file: "${LOG_MAX_FILE:?LOG_MAX_FILE is required}"
+
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # ──────────────────────────────────────────────────────────────────
+  # PostgreSQL
+  # ──────────────────────────────────────────────────────────────────
+  harbor-db:
+    image: goharbor/harbor-db:${HARBOR_VERSION:?HARBOR_VERSION is required}
+    pull_policy: always
+    container_name: harbor-db
+    restart: always
+    stop_grace_period: 30s
+    shm_size: ${HARBOR_DB_SHM_SIZE:?HARBOR_DB_SHM_SIZE is required}
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_DB=${POSTGRES_DB:?POSTGRES_DB is required}
+      - POSTGRES_USER=${POSTGRES_USER:?POSTGRES_USER is required}
+      - TZ=${TZ:?TZ is required}
+    volumes:
+      - "${HARBOR_DB_DATA_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/database}:/var/lib/postgresql/data"
+    networks:
+      - harbor-network
+    healthcheck:
+      test: ["CMD", "/docker-healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    <<: *default-security
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: '${HARBOR_DB_CPU_LIMIT:?HARBOR_DB_CPU_LIMIT is required}'
+          memory: ${HARBOR_DB_MEMORY_LIMIT:?HARBOR_DB_MEMORY_LIMIT is required}
+          pids: ${HARBOR_DB_PIDS_LIMIT:?HARBOR_DB_PIDS_LIMIT is required}
+        reservations:
+          cpus: '${HARBOR_DB_CPU_RESERVATION:?HARBOR_DB_CPU_RESERVATION is required}'
+          memory: ${HARBOR_DB_MEMORY_RESERVATION:?HARBOR_DB_MEMORY_RESERVATION is required}
+
+  # ──────────────────────────────────────────────────────────────────
+  # Redis (valkey) — password protected, memory capped, LRU eviction
+  # ──────────────────────────────────────────────────────────────────
+  harbor-redis:
+    image: goharbor/valkey-photon:${HARBOR_VERSION:?HARBOR_VERSION is required}
+    pull_policy: always
+    container_name: harbor-redis
+    restart: always
+    command:
+      - valkey-server
+      - /etc/redis.conf
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      - --maxmemory
+      - ${HARBOR_REDIS_MAX_MEMORY:?HARBOR_REDIS_MAX_MEMORY is required}
+      - --maxmemory-policy
+      - allkeys-lru
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      - TZ=${TZ:?TZ is required}
+    volumes:
+      - "${HARBOR_REDIS_DATA_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/redis}:/var/lib/redis"
+    networks:
+      - harbor-network
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    <<: *default-security
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: '${HARBOR_REDIS_CPU_LIMIT:?HARBOR_REDIS_CPU_LIMIT is required}'
+          memory: ${HARBOR_REDIS_MEMORY_LIMIT:?HARBOR_REDIS_MEMORY_LIMIT is required}
+          pids: ${HARBOR_REDIS_PIDS_LIMIT:?HARBOR_REDIS_PIDS_LIMIT is required}
+        reservations:
+          cpus: '${HARBOR_REDIS_CPU_RESERVATION:?HARBOR_REDIS_CPU_RESERVATION is required}'
+          memory: ${HARBOR_REDIS_MEMORY_RESERVATION:?HARBOR_REDIS_MEMORY_RESERVATION is required}
+
+  # ──────────────────────────────────────────────────────────────────
+  # Harbor Portal — static UI (reached through harbor-router)
+  # ──────────────────────────────────────────────────────────────────
+  harbor-portal:
+    image: goharbor/harbor-portal:${HARBOR_VERSION:?HARBOR_VERSION is required}
+    pull_policy: always
+    container_name: harbor-portal
+    restart: always
+    environment:
+      - TZ=${TZ:?TZ is required}
+    volumes:
+      - "${HARBOR_CONFIG_DIR:?HARBOR_CONFIG_DIR is required}/portal/nginx.conf:/etc/nginx/nginx.conf:ro"
+    networks:
+      - harbor-network
+    <<: *default-security
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: '${HARBOR_PORTAL_CPU_LIMIT:?HARBOR_PORTAL_CPU_LIMIT is required}'
+          memory: ${HARBOR_PORTAL_MEMORY_LIMIT:?HARBOR_PORTAL_MEMORY_LIMIT is required}
+          pids: ${HARBOR_PORTAL_PIDS_LIMIT:?HARBOR_PORTAL_PIDS_LIMIT is required}
+        reservations:
+          cpus: '${HARBOR_PORTAL_CPU_RESERVATION:?HARBOR_PORTAL_CPU_RESERVATION is required}'
+          memory: ${HARBOR_PORTAL_MEMORY_RESERVATION:?HARBOR_PORTAL_MEMORY_RESERVATION is required}
+
+  # ──────────────────────────────────────────────────────────────────
+  # Harbor Router — single ingress; Coolify/Traefik terminates TLS and
+  # routes the public domain to this service on port 8080
+  # ──────────────────────────────────────────────────────────────────
+  harbor-router:
+    image: nginx:stable-alpine
+    pull_policy: always
+    container_name: harbor-router
+    restart: always
+    volumes:
+      - "${HARBOR_CONFIG_DIR:?HARBOR_CONFIG_DIR is required}/nginx/router.conf:/etc/nginx/conf.d/default.conf:ro"
+    expose:
+      - "8080"
+    networks:
+      - harbor-network
+    depends_on:
+      harbor-portal:
+        condition: service_started
+      harbor-core:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    <<: *default-security
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: '${HARBOR_ROUTER_CPU_LIMIT:?HARBOR_ROUTER_CPU_LIMIT is required}'
+          memory: ${HARBOR_ROUTER_MEMORY_LIMIT:?HARBOR_ROUTER_MEMORY_LIMIT is required}
+          pids: ${HARBOR_ROUTER_PIDS_LIMIT:?HARBOR_ROUTER_PIDS_LIMIT is required}
+        reservations:
+          cpus: '${HARBOR_ROUTER_CPU_RESERVATION:?HARBOR_ROUTER_CPU_RESERVATION is required}'
+          memory: ${HARBOR_ROUTER_MEMORY_RESERVATION:?HARBOR_ROUTER_MEMORY_RESERVATION is required}
+
+  # ──────────────────────────────────────────────────────────────────
+  # Harbor Core — API, token service and /v2/ proxy
+  # ──────────────────────────────────────────────────────────────────
+  harbor-core:
+    image: goharbor/harbor-core:${HARBOR_VERSION:?HARBOR_VERSION is required}
+    pull_policy: always
+    container_name: harbor-core
+    restart: always
+    environment:
+      - TZ=${TZ:?TZ is required}
+      - PORT=8080
+      - LOG_LEVEL=${LOG_LEVEL:?LOG_LEVEL is required}
+      - EXT_ENDPOINT=${EXTERNAL_URL:?EXTERNAL_URL is required}
+      - PORTAL_URL=${PORTAL_URL:?PORTAL_URL is required}
+      - CORE_URL=http://harbor-core:8080
+      - REGISTRY_URL=http://registry:5000
+      - TOKEN_SERVICE_URL=http://harbor-core:8080/service/token
+      - JOBSERVICE_URL=http://harbor-jobservice:8080
+      - REGISTRY_CONTROLLER_URL=http://registryctl:8080
+      - CORE_SECRET=${CORE_SECRET:?CORE_SECRET is required}
+      - JOBSERVICE_SECRET=${JOBSERVICE_SECRET:?JOBSERVICE_SECRET is required}
+      - HARBOR_ADMIN_PASSWORD=${HARBOR_ADMIN_PASSWORD:?HARBOR_ADMIN_PASSWORD is required}
+      - CSRF_KEY=${CSRF_KEY:?CSRF_KEY is required}
+      - DATABASE_TYPE=postgresql
+      - POSTGRESQL_HOST=harbor-db
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USERNAME=${POSTGRES_USER:?POSTGRES_USER is required}
+      - POSTGRESQL_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRESQL_DATABASE=${POSTGRES_DB:?POSTGRES_DB is required}
+      - POSTGRESQL_SSLMODE=disable
+      - _REDIS_URL_CORE=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@harbor-redis:6379/0
+      - REGISTRY_CREDENTIAL_USERNAME=${REGISTRY_USERNAME:?REGISTRY_USERNAME is required}
+      - REGISTRY_CREDENTIAL_PASSWORD=${REGISTRY_PASSWORD:?REGISTRY_PASSWORD is required}
+      - TOKEN_PRIVATE_KEY_PATH=/etc/core/private_key.pem
+      - KEY_PATH=/etc/core/key
+      - WITH_TRIVY=false
+      - READ_ONLY=false
+      - MAX_JOB_WORKERS=${MAX_JOB_WORKERS:?MAX_JOB_WORKERS is required}
+    volumes:
+      - "${HARBOR_SECRET_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/secret}/core/private_key.pem:/etc/core/private_key.pem:ro"
+      - "${HARBOR_SECRET_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/secret}/keys/secretkey:/etc/core/key:ro"
+      - "${HARBOR_CA_DOWNLOAD_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/ca_download}:/etc/core/ca"
+      - "${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}:/data"
+    networks:
+      - harbor-network
+    depends_on:
+      harbor-db:
+        condition: service_healthy
+      harbor-redis:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+      registryctl:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "http://localhost:8080/api/v2.0/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    <<: *default-security
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: '${HARBOR_CORE_CPU_LIMIT:?HARBOR_CORE_CPU_LIMIT is required}'
+          memory: ${HARBOR_CORE_MEMORY_LIMIT:?HARBOR_CORE_MEMORY_LIMIT is required}
+          pids: ${HARBOR_CORE_PIDS_LIMIT:?HARBOR_CORE_PIDS_LIMIT is required}
+        reservations:
+          cpus: '${HARBOR_CORE_CPU_RESERVATION:?HARBOR_CORE_CPU_RESERVATION is required}'
+          memory: ${HARBOR_CORE_MEMORY_RESERVATION:?HARBOR_CORE_MEMORY_RESERVATION is required}
+
+  # ──────────────────────────────────────────────────────────────────
+  # Registry — blob storage, internal network only (core proxies /v2/)
+  # ──────────────────────────────────────────────────────────────────
+  registry:
+    image: goharbor/registry-photon:${HARBOR_VERSION:?HARBOR_VERSION is required}
+    pull_policy: always
+    container_name: registry
+    restart: always
+    environment:
+      - TZ=${TZ:?TZ is required}
+      - REGISTRY_HTTP_SECRET=${REGISTRY_HTTP_SECRET:?REGISTRY_HTTP_SECRET is required}
+      - REGISTRY_REDIS_ADDR=harbor-redis:6379
+      - REGISTRY_REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      - REGISTRY_REDIS_DB=0
+    volumes:
+      - "${HARBOR_REGISTRY_DATA_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/registry}:/storage"
+      - "${HARBOR_CONFIG_DIR:?HARBOR_CONFIG_DIR is required}/registry/config.yml:/etc/registry/config.yml:ro"
+      - "${HARBOR_SECRET_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/secret}/registry/passwd:/etc/registry/passwd:ro"
+    networks:
+      - harbor-network
+    depends_on:
+      harbor-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "http://localhost:5000"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    <<: *default-security
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: '${HARBOR_REGISTRY_CPU_LIMIT:?HARBOR_REGISTRY_CPU_LIMIT is required}'
+          memory: ${HARBOR_REGISTRY_MEMORY_LIMIT:?HARBOR_REGISTRY_MEMORY_LIMIT is required}
+          pids: ${HARBOR_REGISTRY_PIDS_LIMIT:?HARBOR_REGISTRY_PIDS_LIMIT is required}
+        reservations:
+          cpus: '${HARBOR_REGISTRY_CPU_RESERVATION:?HARBOR_REGISTRY_CPU_RESERVATION is required}'
+          memory: ${HARBOR_REGISTRY_MEMORY_RESERVATION:?HARBOR_REGISTRY_MEMORY_RESERVATION is required}
+
+  # ──────────────────────────────────────────────────────────────────
+  # Registry Controller — garbage collection for the registry
+  # ──────────────────────────────────────────────────────────────────
+  registryctl:
+    image: goharbor/harbor-registryctl:${HARBOR_VERSION:?HARBOR_VERSION is required}
+    pull_policy: always
+    container_name: registryctl
+    restart: always
+    environment:
+      - TZ=${TZ:?TZ is required}
+      - CORE_SECRET=${CORE_SECRET:?CORE_SECRET is required}
+      - JOBSERVICE_SECRET=${JOBSERVICE_SECRET:?JOBSERVICE_SECRET is required}
+    volumes:
+      - "${HARBOR_REGISTRY_DATA_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/registry}:/storage"
+      - "${HARBOR_CONFIG_DIR:?HARBOR_CONFIG_DIR is required}/registry/config.yml:/etc/registry/config.yml:ro"
+      - "${HARBOR_SECRET_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/secret}/registry/passwd:/etc/registry/passwd:ro"
+      - "${HARBOR_CONFIG_DIR:?HARBOR_CONFIG_DIR is required}/registryctl/config.yml:/etc/registryctl/config.yml:ro"
+    networks:
+      - harbor-network
+    depends_on:
+      registry:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "http://localhost:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    <<: *default-security
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: '${HARBOR_REGISTRYCTL_CPU_LIMIT:?HARBOR_REGISTRYCTL_CPU_LIMIT is required}'
+          memory: ${HARBOR_REGISTRYCTL_MEMORY_LIMIT:?HARBOR_REGISTRYCTL_MEMORY_LIMIT is required}
+          pids: ${HARBOR_REGISTRYCTL_PIDS_LIMIT:?HARBOR_REGISTRYCTL_PIDS_LIMIT is required}
+        reservations:
+          cpus: '${HARBOR_REGISTRYCTL_CPU_RESERVATION:?HARBOR_REGISTRYCTL_CPU_RESERVATION is required}'
+          memory: ${HARBOR_REGISTRYCTL_MEMORY_RESERVATION:?HARBOR_REGISTRYCTL_MEMORY_RESERVATION is required}
+
+  # ──────────────────────────────────────────────────────────────────
+  # Harbor Jobservice — async jobs (GC, replication, webhooks)
+  # ──────────────────────────────────────────────────────────────────
+  harbor-jobservice:
+    image: goharbor/harbor-jobservice:${HARBOR_VERSION:?HARBOR_VERSION is required}
+    pull_policy: always
+    container_name: harbor-jobservice
+    restart: always
+    environment:
+      - TZ=${TZ:?TZ is required}
+      - LOG_LEVEL=${LOG_LEVEL:?LOG_LEVEL is required}
+      - CORE_SECRET=${CORE_SECRET:?CORE_SECRET is required}
+      - JOBSERVICE_SECRET=${JOBSERVICE_SECRET:?JOBSERVICE_SECRET is required}
+      - CORE_URL=http://harbor-core:8080
+      - REGISTRY_URL=http://registry:5000
+      - REGISTRY_CONTROLLER_URL=http://registryctl:8080
+      - REGISTRY_CREDENTIAL_USERNAME=${REGISTRY_USERNAME:?REGISTRY_USERNAME is required}
+      - REGISTRY_CREDENTIAL_PASSWORD=${REGISTRY_PASSWORD:?REGISTRY_PASSWORD is required}
+    volumes:
+      - "${HARBOR_JOB_LOGS_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/job_logs}:/var/log/jobs"
+      - "${HARBOR_SECRET_DIR:-${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}/secret}/jobservice/config.yml:/etc/jobservice/config.yml:ro"
+    networks:
+      - harbor-network
+    depends_on:
+      harbor-redis:
+        condition: service_healthy
+      harbor-core:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "http://localhost:8080/api/v1/stats"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    <<: *default-security
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: '${HARBOR_JOBSERVICE_CPU_LIMIT:?HARBOR_JOBSERVICE_CPU_LIMIT is required}'
+          memory: ${HARBOR_JOBSERVICE_MEMORY_LIMIT:?HARBOR_JOBSERVICE_MEMORY_LIMIT is required}
+          pids: ${HARBOR_JOBSERVICE_PIDS_LIMIT:?HARBOR_JOBSERVICE_PIDS_LIMIT is required}
+        reservations:
+          cpus: '${HARBOR_JOBSERVICE_CPU_RESERVATION:?HARBOR_JOBSERVICE_CPU_RESERVATION is required}'
+          memory: ${HARBOR_JOBSERVICE_MEMORY_RESERVATION:?HARBOR_JOBSERVICE_MEMORY_RESERVATION is required}
+
+networks:
+  harbor-network:
+    name: ${HARBOR_NETWORK_NAME:?HARBOR_NETWORK_NAME is required}
+    driver: bridge
