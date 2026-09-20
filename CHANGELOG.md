@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variable instead of being composed from `REDIS_PASSWORD` in the compose
   file.
 
+### Fixed
+
+- Portal and router nginx now listen on IPv6 (`listen [::]:8080;`) as well
+  as IPv4. On hosts whose Docker network hands out AAAA records, the router
+  could resolve an upstream to IPv6 and fail with `connection refused`,
+  causing intermittent 502/504 responses.
+
 ## [1.0.0] - 2026-09-20
 
 ### Added
