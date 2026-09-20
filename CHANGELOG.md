@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It is generated from `docker-compose.yml` by
   `scripts/render-coolify-compose.sh` — use `make coolify-compose` to
   regenerate and `make check` to detect drift.
+- `HARBOR_ADMIN_USERNAME` in the env templates, documenting Harbor's built-in
+  administrator account (`admin`), used together with `HARBOR_ADMIN_PASSWORD`
+  for the first portal login.
+- `COOLIFY-GUIDE.md`, a complete Coolify deployment walkthrough: mandatory
+  pre-deploy secret setup, the `harbor-router` domain/SSL configuration
+  (including the `:8080` suffix), verification and troubleshooting.
 
 ### Changed
 

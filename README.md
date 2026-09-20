@@ -204,6 +204,10 @@ mounts under `/data/harbor`: [`docker-compose.coolify.yml`](docker-compose.cooli
 It is generated from `docker-compose.yml` by `scripts/render-coolify-compose.sh`
 (`make coolify-compose`).
 
+> **Full walkthrough:** see [`COOLIFY-GUIDE.md`](COOLIFY-GUIDE.md) for the
+> complete step-by-step — mandatory pre-deploy secret setup, the `:8080`
+> domain setting that enables SSL, and troubleshooting.
+
 1. Push this repository to a private Git remote and create a Coolify resource
    with the **Docker Compose** build pack. Set **Docker Compose Location** to
    `docker-compose.coolify.yml`.
@@ -294,6 +298,7 @@ Each config file has its own volume mapping variable in the main compose
 ├── .env.example                     # runnable local template
 ├── .env.production.example          # production template
 ├── Makefile                         # common operations
+├── COOLIFY-GUIDE.md                 # Coolify deployment walkthrough
 ├── SECURITY.md
 └── CHANGELOG.md
 ```
@@ -357,6 +362,7 @@ under `/data/harbor` because Coolify rejects variables in volume definitions.
 | `POSTGRES_PASSWORD` | Database password (generated) |
 | `REDIS_PASSWORD` | Redis password (generated) |
 | `REDIS_URL` | Full authenticated Redis URL used by core and jobservice (generated) |
+| `HARBOR_ADMIN_USERNAME` | Built-in administrator username (fixed by Harbor: `admin`) |
 | `HARBOR_ADMIN_PASSWORD` | Initial `admin` password (generated, policy-compliant) |
 | `CORE_SECRET` / `JOBSERVICE_SECRET` | Inter-service secrets (generated) |
 | `CSRF_KEY` | Must be exactly 32 characters (generated) |
