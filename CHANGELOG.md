@@ -9,17 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Breaking:** every bind-mount source is now a single complete-path
-  variable (no variables embedded inside a path), so Coolify and other
-  Compose consumers can parse the file cleanly. `HARBOR_CONFIG_DIR` and
-  `HARBOR_SECRET_DIR` were removed in favor of per-file variables
-  (`HARBOR_PORTAL_CONFIG`, `HARBOR_ROUTER_CONFIG`, `HARBOR_REGISTRY_CONFIG`,
-  `HARBOR_REGISTRYCTL_CONFIG`, `HARBOR_JOBSERVICE_TEMPLATE`,
-  `HARBOR_CORE_PRIVATE_KEY`, `HARBOR_CORE_SECRET_KEY`,
-  `HARBOR_REGISTRY_PASSWD`, `HARBOR_JOBSERVICE_CONFIG`), and the data
-  directories are now complete paths (`HARBOR_DB_DATA_DIR`,
-  `HARBOR_REDIS_DATA_DIR`, `HARBOR_REGISTRY_DATA_DIR`, `HARBOR_JOB_LOGS_DIR`,
-  `HARBOR_CA_DOWNLOAD_DIR`).
+- **Breaking:** every Docker volume is now a single complete mapping
+  variable in the env file — `<host-source>:<container-target>[:mode]` —
+  and `docker-compose.yml` references one variable per volume. The
+  path-only variables (`HARBOR_DATA_DIR`, `HARBOR_DB_DATA_DIR`,
+  `HARBOR_CONFIG_DIR`, `HARBOR_SECRET_DIR`, and the per-file config/secret
+  paths) were replaced by `HARBOR_*_VOLUME` mappings. Only the host source
+  should be edited; targets and `:ro` modes are required by the images and
+  `gen-secrets.sh` warns when they change.
 - `_REDIS_URL_CORE` is now supplied through the generated `REDIS_URL`
   variable instead of being composed from `REDIS_PASSWORD` in the compose
   file.

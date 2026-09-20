@@ -40,7 +40,8 @@ immediately — assume anything pushed to a public remote is compromised.
   the public HTTPS URL.
 - Do not publish container ports; only the reverse proxy should join the
   Docker network.
-- Keep `HARBOR_DATA_DIR` outside the repository and restrict host access.
+- Keep the `HARBOR_*_VOLUME` host sources (especially `HARBOR_DATA_VOLUME`)
+  outside the repository and restrict host access.
 - Back up `.env` / key material to a secret manager, not to git.
 - Rotate `HARBOR_ADMIN_PASSWORD` after first login if it was shared.
 - Review resource limits and log rotation for your host.

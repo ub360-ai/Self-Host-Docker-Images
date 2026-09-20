@@ -11,13 +11,14 @@
 #   2. renders the secret-bearing jobservice config,
 #   3. generates the registry htpasswd file,
 #   4. generates the core token-signing key and encryption key,
-#   5. creates every runtime directory at the complete paths configured
-#      by the HARBOR_* path variables and fixes ownership
-#      (harbor=10000:10000, postgres/valkey=999:999).
+#   5. creates every runtime directory and writes every secret at the
+#      host paths taken from the HARBOR_*_VOLUME mappings, then fixes
+#      ownership (harbor=10000:10000, postgres/valkey=999:999).
 #
-# Every path variable holds a complete path; nothing is composed at
-# runtime. Missing variables fall back to the conventional ./data and
-# ./config layout.
+# Each volume variable holds one complete mapping:
+#   <host-source>:<container-target>[:mode]
+# The script only uses the host source; it warns when a container target
+# or :ro mode differs from the shipped default.
 #
 # Existing secrets and key material are NEVER overwritten unless --force
 # is passed. Re-running is safe and only refreshes derived files.
@@ -65,6 +66,64 @@ read_path() {
     resolve_path "$raw"
 }
 
+# ── volume mapping helpers ──────────────────────────────────────────
+# A mapping is "source:target[:mode]". Host paths must not contain ':'.
+volume_strip_mode() {
+    local spec="$1"
+    case "$spec" in
+        *:ro|*:rw) printf '%s' "${spec%:*}" ;;
+        *) printf '%s' "$spec" ;;
+    esac
+}
+
+volume_source() {
+    local spec
+    spec="$(volume_strip_mode "$1")"
+    case "$spec" in
+        *:*) printf '%s' "${spec%%:*}" ;;
+        *) die "malformed volume mapping (expected source:target[:mode]): $1" ;;
+    esac
+}
+
+volume_target() {
+    local spec
+    spec="$(volume_strip_mode "$1")"
+    case "$spec" in
+        *:*) printf '%s' "${spec#*:}" ;;
+        *) printf '' ;;
+    esac
+}
+
+volume_mode() {
+    case "$1" in
+        *:ro) printf 'ro' ;;
+        *:rw) printf '' ;;
+        *) printf '' ;;
+    esac
+}
+
+read_volume_source() {
+    local var="$1" raw
+    raw="$(read_env "$var" || true)"
+    [ -n "$raw" ] || die "$var is missing or empty in $ENV_FILE"
+    resolve_path "$(volume_source "$raw")"
+}
+
+# Warn when a mapping's target or mode deviates from what the images need.
+check_volume() {
+    local var="$1" expected_target="$2" expected_mode="$3" raw target mode
+    raw="$(read_env "$var" || true)"
+    [ -n "$raw" ] || return 0
+    target="$(volume_target "$raw")"
+    mode="$(volume_mode "$raw")"
+    [ "$target" = "$expected_target" ] \
+        || printf 'WARNING: %s target is %s (expected %s)\n' \
+            "$var" "${target:-<none>}" "$expected_target" >&2
+    [ "$mode" = "$expected_mode" ] \
+        || printf 'WARNING: %s mode is %s (expected %s)\n' \
+            "$var" "${mode:-<none>}" "${expected_mode:-<none>}" >&2
+}
+
 gen_b64() { openssl rand -base64 "$1" | tr -d '\n'; }
 gen_hex() { openssl rand -hex "$1" | tr -d '\n'; }
 
@@ -109,21 +168,34 @@ fi
 
 chmod 600 "$ENV_FILE"
 
-# ── 2. resolve configured paths ─────────────────────────────────────
-DATA_DIR_RAW="$(read_env HARBOR_DATA_DIR || true)"
-[ -n "$DATA_DIR_RAW" ] || die "HARBOR_DATA_DIR is missing or empty in $ENV_FILE"
-
-DATA_DIR="$(resolve_path "$DATA_DIR_RAW")"
-DB_DATA_DIR="$(read_path HARBOR_DB_DATA_DIR "${DATA_DIR_RAW}/database")"
-REDIS_DATA_DIR="$(read_path HARBOR_REDIS_DATA_DIR "${DATA_DIR_RAW}/redis")"
-REGISTRY_DATA_DIR="$(read_path HARBOR_REGISTRY_DATA_DIR "${DATA_DIR_RAW}/registry")"
-JOB_LOGS_DIR="$(read_path HARBOR_JOB_LOGS_DIR "${DATA_DIR_RAW}/job_logs")"
-CA_DOWNLOAD_DIR="$(read_path HARBOR_CA_DOWNLOAD_DIR "${DATA_DIR_RAW}/ca_download")"
-CORE_PRIVATE_KEY="$(read_path HARBOR_CORE_PRIVATE_KEY "${DATA_DIR_RAW}/secret/core/private_key.pem")"
-CORE_SECRET_KEY="$(read_path HARBOR_CORE_SECRET_KEY "${DATA_DIR_RAW}/secret/keys/secretkey")"
-REGISTRY_PASSWD="$(read_path HARBOR_REGISTRY_PASSWD "${DATA_DIR_RAW}/secret/registry/passwd")"
-JOB_CONFIG="$(read_path HARBOR_JOBSERVICE_CONFIG "${DATA_DIR_RAW}/secret/jobservice/config.yml")"
+# ── 2. resolve configured volume paths ──────────────────────────────
+DATA_DIR="$(read_volume_source HARBOR_DATA_VOLUME)"
+DB_DATA_DIR="$(read_volume_source HARBOR_DB_VOLUME)"
+REDIS_DATA_DIR="$(read_volume_source HARBOR_REDIS_VOLUME)"
+REGISTRY_DATA_DIR="$(read_volume_source HARBOR_REGISTRY_DATA_VOLUME)"
+JOB_LOGS_DIR="$(read_volume_source HARBOR_JOB_LOGS_VOLUME)"
+CA_DOWNLOAD_DIR="$(read_volume_source HARBOR_CA_DOWNLOAD_VOLUME)"
+CORE_PRIVATE_KEY="$(read_volume_source HARBOR_CORE_PRIVATE_KEY_VOLUME)"
+CORE_SECRET_KEY="$(read_volume_source HARBOR_CORE_SECRET_KEY_VOLUME)"
+REGISTRY_PASSWD="$(read_volume_source HARBOR_REGISTRY_PASSWD_VOLUME)"
+JOB_CONFIG="$(read_volume_source HARBOR_JOBSERVICE_CONFIG_VOLUME)"
 JOB_TEMPLATE="$(read_path HARBOR_JOBSERVICE_TEMPLATE './config/jobservice/config.yml.tmpl')"
+
+# ── 2b. warn on target/mode drift ───────────────────────────────────
+check_volume HARBOR_DATA_VOLUME /data ""
+check_volume HARBOR_DB_VOLUME /var/lib/postgresql/data ""
+check_volume HARBOR_REDIS_VOLUME /var/lib/redis ""
+check_volume HARBOR_REGISTRY_DATA_VOLUME /storage ""
+check_volume HARBOR_JOB_LOGS_VOLUME /var/log/jobs ""
+check_volume HARBOR_CA_DOWNLOAD_VOLUME /etc/core/ca ""
+check_volume HARBOR_CORE_PRIVATE_KEY_VOLUME /etc/core/private_key.pem ro
+check_volume HARBOR_CORE_SECRET_KEY_VOLUME /etc/core/key ro
+check_volume HARBOR_REGISTRY_PASSWD_VOLUME /etc/registry/passwd ro
+check_volume HARBOR_JOBSERVICE_CONFIG_VOLUME /etc/jobservice/config.yml ro
+check_volume HARBOR_PORTAL_CONFIG_VOLUME /etc/nginx/nginx.conf ro
+check_volume HARBOR_ROUTER_CONFIG_VOLUME /etc/nginx/conf.d/default.conf ro
+check_volume HARBOR_REGISTRY_CONFIG_VOLUME /etc/registry/config.yml ro
+check_volume HARBOR_REGISTRYCTL_CONFIG_VOLUME /etc/registryctl/config.yml ro
 
 # Redis URL used verbatim by harbor-core and the jobservice config.
 REDIS_URL_VALUE="$(read_env REDIS_URL || true)"

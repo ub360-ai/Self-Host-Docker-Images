@@ -46,7 +46,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:?POSTGRES_USER is required}
       - TZ=${TZ:?TZ is required}
     volumes:
-      - "${HARBOR_DB_DATA_DIR:?HARBOR_DB_DATA_DIR is required}:/var/lib/postgresql/data"
+      - "${HARBOR_DB_VOLUME:?HARBOR_DB_VOLUME is required}"
     networks:
       - harbor-network
     healthcheck:
@@ -88,7 +88,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       - TZ=${TZ:?TZ is required}
     volumes:
-      - "${HARBOR_REDIS_DATA_DIR:?HARBOR_REDIS_DATA_DIR is required}:/var/lib/redis"
+      - "${HARBOR_REDIS_VOLUME:?HARBOR_REDIS_VOLUME is required}"
     networks:
       - harbor-network
     healthcheck:
@@ -120,7 +120,7 @@ services:
     environment:
       - TZ=${TZ:?TZ is required}
     volumes:
-      - "${HARBOR_PORTAL_CONFIG:?HARBOR_PORTAL_CONFIG is required}:/etc/nginx/nginx.conf:ro"
+      - "${HARBOR_PORTAL_CONFIG_VOLUME:?HARBOR_PORTAL_CONFIG_VOLUME is required}"
     networks:
       - harbor-network
     <<: *default-security
@@ -145,7 +145,7 @@ services:
     container_name: harbor-router
     restart: always
     volumes:
-      - "${HARBOR_ROUTER_CONFIG:?HARBOR_ROUTER_CONFIG is required}:/etc/nginx/conf.d/default.conf:ro"
+      - "${HARBOR_ROUTER_CONFIG_VOLUME:?HARBOR_ROUTER_CONFIG_VOLUME is required}"
     expose:
       - "8080"
     networks:
@@ -212,10 +212,10 @@ services:
       - READ_ONLY=false
       - MAX_JOB_WORKERS=${MAX_JOB_WORKERS:?MAX_JOB_WORKERS is required}
     volumes:
-      - "${HARBOR_CORE_PRIVATE_KEY:?HARBOR_CORE_PRIVATE_KEY is required}:/etc/core/private_key.pem:ro"
-      - "${HARBOR_CORE_SECRET_KEY:?HARBOR_CORE_SECRET_KEY is required}:/etc/core/key:ro"
-      - "${HARBOR_CA_DOWNLOAD_DIR:?HARBOR_CA_DOWNLOAD_DIR is required}:/etc/core/ca"
-      - "${HARBOR_DATA_DIR:?HARBOR_DATA_DIR is required}:/data"
+      - "${HARBOR_CORE_PRIVATE_KEY_VOLUME:?HARBOR_CORE_PRIVATE_KEY_VOLUME is required}"
+      - "${HARBOR_CORE_SECRET_KEY_VOLUME:?HARBOR_CORE_SECRET_KEY_VOLUME is required}"
+      - "${HARBOR_CA_DOWNLOAD_VOLUME:?HARBOR_CA_DOWNLOAD_VOLUME is required}"
+      - "${HARBOR_DATA_VOLUME:?HARBOR_DATA_VOLUME is required}"
     networks:
       - harbor-network
     depends_on:
@@ -260,9 +260,9 @@ services:
       - REGISTRY_REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       - REGISTRY_REDIS_DB=0
     volumes:
-      - "${HARBOR_REGISTRY_DATA_DIR:?HARBOR_REGISTRY_DATA_DIR is required}:/storage"
-      - "${HARBOR_REGISTRY_CONFIG:?HARBOR_REGISTRY_CONFIG is required}:/etc/registry/config.yml:ro"
-      - "${HARBOR_REGISTRY_PASSWD:?HARBOR_REGISTRY_PASSWD is required}:/etc/registry/passwd:ro"
+      - "${HARBOR_REGISTRY_DATA_VOLUME:?HARBOR_REGISTRY_DATA_VOLUME is required}"
+      - "${HARBOR_REGISTRY_CONFIG_VOLUME:?HARBOR_REGISTRY_CONFIG_VOLUME is required}"
+      - "${HARBOR_REGISTRY_PASSWD_VOLUME:?HARBOR_REGISTRY_PASSWD_VOLUME is required}"
     networks:
       - harbor-network
     depends_on:
@@ -299,10 +299,10 @@ services:
       - CORE_SECRET=${CORE_SECRET:?CORE_SECRET is required}
       - JOBSERVICE_SECRET=${JOBSERVICE_SECRET:?JOBSERVICE_SECRET is required}
     volumes:
-      - "${HARBOR_REGISTRY_DATA_DIR:?HARBOR_REGISTRY_DATA_DIR is required}:/storage"
-      - "${HARBOR_REGISTRY_CONFIG:?HARBOR_REGISTRY_CONFIG is required}:/etc/registry/config.yml:ro"
-      - "${HARBOR_REGISTRY_PASSWD:?HARBOR_REGISTRY_PASSWD is required}:/etc/registry/passwd:ro"
-      - "${HARBOR_REGISTRYCTL_CONFIG:?HARBOR_REGISTRYCTL_CONFIG is required}:/etc/registryctl/config.yml:ro"
+      - "${HARBOR_REGISTRY_DATA_VOLUME:?HARBOR_REGISTRY_DATA_VOLUME is required}"
+      - "${HARBOR_REGISTRY_CONFIG_VOLUME:?HARBOR_REGISTRY_CONFIG_VOLUME is required}"
+      - "${HARBOR_REGISTRY_PASSWD_VOLUME:?HARBOR_REGISTRY_PASSWD_VOLUME is required}"
+      - "${HARBOR_REGISTRYCTL_CONFIG_VOLUME:?HARBOR_REGISTRYCTL_CONFIG_VOLUME is required}"
     networks:
       - harbor-network
     depends_on:
@@ -345,8 +345,8 @@ services:
       - REGISTRY_CREDENTIAL_USERNAME=${REGISTRY_USERNAME:?REGISTRY_USERNAME is required}
       - REGISTRY_CREDENTIAL_PASSWORD=${REGISTRY_PASSWORD:?REGISTRY_PASSWORD is required}
     volumes:
-      - "${HARBOR_JOB_LOGS_DIR:?HARBOR_JOB_LOGS_DIR is required}:/var/log/jobs"
-      - "${HARBOR_JOBSERVICE_CONFIG:?HARBOR_JOBSERVICE_CONFIG is required}:/etc/jobservice/config.yml:ro"
+      - "${HARBOR_JOB_LOGS_VOLUME:?HARBOR_JOB_LOGS_VOLUME is required}"
+      - "${HARBOR_JOBSERVICE_CONFIG_VOLUME:?HARBOR_JOBSERVICE_CONFIG_VOLUME is required}"
     networks:
       - harbor-network
     depends_on:
