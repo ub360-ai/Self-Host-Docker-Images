@@ -17,6 +17,7 @@ No published ports · no secrets in the compose file · one command to bootstrap
 [![Harbor](https://img.shields.io/badge/Harbor-v2.15.2-60B932?style=for-the-badge&logo=docker)](https://goharbor.io)
 [![Docker Compose](https://img.shields.io/badge/Docker%20Compose-v2-2496ED?style=for-the-badge&logo=docker)](https://docs.docker.com/compose/)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-ready-8A2BE2?style=for-the-badge)](#use-cases)
+[![Fund my work on FLOSSAfrica](https://flossafrica.com/badge.svg?theme=dark)](https://flossafrica.com/m/ub360-ai?p=Self-Host-Docker-Images)
 
 </div>
 
@@ -48,6 +49,7 @@ variables, and written to `git`-ignored paths.
 - [Known limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
+- [Support](#support)
 - [License](#license)
 - [Credits](#credits)
 
@@ -533,6 +535,13 @@ Issues and pull requests are welcome.
 - Validate changes with `make config` and, when possible, a local smoke test
   (push and pull an image through `127.0.0.1:8080`).
 - Update [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
+
+## Support
+
+If this project saves you time, consider funding its development on
+[FLOSSAfrica](https://flossafrica.com/m/ub360-ai?p=Self-Host-Docker-Images):
+
+[![Fund my work on FLOSSAfrica](https://flossafrica.com/badge.svg?theme=dark)](https://flossafrica.com/m/ub360-ai?p=Self-Host-Docker-Images)
 
 ## License
 
